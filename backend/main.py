@@ -37,15 +37,25 @@ class ForecastResponse(BaseModel):
     last_actual_price: float
     forecast: list[ForecastPoint]
     metrics: MetricsModel
-
 def fetch_data(ticker: str) -> pd.DataFrame:
-    raw = yf.download(
-        ticker,
-        start="2015-01-01",
-        end=date.today().strftime("%Y-%m-%d"),
-        auto_adjust=True,
-        progress=False
-    )
+    try:
+        raw = yf.download(
+            ticker,
+            start="2015-01-01",
+            end=date.today().strftime("%Y-%m-%d"),
+            auto_adjust=True,
+            progress=False,
+            threads=False
+        )
+    except Exception:
+        raw = yf.download(
+            ticker,
+            period="10y",
+            auto_adjust=True,
+            progress=False,
+            threads=False
+        )
+
     if raw.empty:
         raise HTTPException(status_code=404, detail=f"No data found for ticker '{ticker}'")
 
@@ -58,13 +68,7 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     df = df.reset_index()
     df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
     df = df.dropna(subset=["y"])
-    
-    # Flatten y in case it's 2D
     df["y"] = df["y"].values.flatten().astype(float)
-    
-    print("y dtype:", df["y"].dtype)
-    print("y shape:", df["y"].shape)
-    print("fetch_data done, rows:", len(df))
     return df
 
 def train_and_forecast(df, forecast_days, interval_width):
