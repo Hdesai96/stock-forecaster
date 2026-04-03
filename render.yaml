@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: stock-forecaster-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    plan: free
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+        
