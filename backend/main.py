@@ -18,7 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_KEY = "KST29ACWRH1JHNK1"
+API_KEY = "CX0LKRLDG6QO5UJ0"
 
 class ForecastPoint(BaseModel):
     date: str
