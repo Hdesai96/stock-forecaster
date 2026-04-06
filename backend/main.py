@@ -42,7 +42,7 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     
     API_KEY = "KST29ACWRH1JHNK1"
     
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={ticker}&outputsize=full&apikey={API_KEY}"
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&outputsize=full&apikey={API_KEY}"
     
     response = requests.get(url)
     data = response.json()
@@ -54,7 +54,7 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     df = pd.DataFrame.from_dict(ts, orient="index")
     df.index = pd.to_datetime(df.index)
     df = df.sort_index()
-    df = df.rename(columns={"4. close": "y", "6. volume": "volume"})
+    df = df.rename(columns={"4. close": "y", "5. volume": "volume"})
     df["y"] = df["y"].astype(float)
     df["volume"] = df["volume"].astype(float)
     df.index.name = "ds"
