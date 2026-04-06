@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
-import yfinance as yf
+import requests
 from prophet import Prophet
 from datetime import date
 import warnings
@@ -17,6 +17,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+API_KEY = "KST29ACWRH1JHNK1"
 
 class ForecastPoint(BaseModel):
     date: str
@@ -37,18 +39,21 @@ class ForecastResponse(BaseModel):
     last_actual_price: float
     forecast: list[ForecastPoint]
     metrics: MetricsModel
+
+
 def fetch_data(ticker: str) -> pd.DataFrame:
-    import requests
-    
-    API_KEY = "KST29ACWRH1JHNK1"
-    
     url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&outputsize=full&apikey={API_KEY}"
     
-    response = requests.get(url)
+    print(f"Fetching data for {ticker} from Alpha Vantage...")
+    response = requests.get(url, timeout=30)
     data = response.json()
     
+    print(f"Response keys: {list(data.keys())}")
+    
     if "Time Series (Daily)" not in data:
-        raise HTTPException(status_code=404, detail=f"No data found for ticker '{ticker}'")
+        error_msg = data.get("Note") or data.get("Information") or data.get("Error Message") or "Unknown error"
+        print(f"Error from Alpha Vantage: {error_msg}")
+        raise HTTPException(status_code=404, detail=f"No data found for ticker '{ticker}': {error_msg}")
     
     ts = data["Time Series (Daily)"]
     df = pd.DataFrame.from_dict(ts, orient="index")
@@ -63,8 +68,9 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     df = df[["ds", "y", "volume"]]
     df = df.dropna(subset=["y"])
     
-    print(f"Fetched {len(df)} rows for {ticker}")
+    print(f"Fetched {len(df)} rows for {ticker}, last date: {df['ds'].max()}")
     return df
+
 
 def train_and_forecast(df, forecast_days, interval_width):
     model = Prophet(
@@ -79,6 +85,7 @@ def train_and_forecast(df, forecast_days, interval_width):
     forecast = model.predict(future)
     future_only = forecast[forecast["ds"] > df["ds"].max()]
     return future_only[["ds", "yhat", "yhat_lower", "yhat_upper"]]
+
 
 def evaluate_model(df, test_days, interval_width):
     split_idx = len(df) - test_days
@@ -104,13 +111,27 @@ def evaluate_model(df, test_days, interval_width):
     coverage = float(((actual >= merged["yhat_lower"].values) & (actual <= merged["yhat_upper"].values)).mean())
     return {"mae": mae, "rmse": rmse, "mape": mape, "ci_coverage": coverage}
 
+
 @app.get("/")
 def root():
     return {"status": "ok", "message": "Stock Forecaster API is running"}
 
+
 @app.get("/health")
 def health():
     return {"status": "healthy"}
+
+
+@app.get("/test-data")
+def test_data(ticker: str = "AAPL"):
+    """Debug endpoint — tests Alpha Vantage directly"""
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&outputsize=compact&apikey={API_KEY}"
+    response = requests.get(url, timeout=30)
+    data = response.json()
+    keys = list(data.keys())
+    first_key = list(data.get("Time Series (Daily)", {}).keys())[:2] if "Time Series (Daily)" in data else []
+    return {"response_keys": keys, "first_dates": first_key, "status": "ok" if "Time Series (Daily)" in data else "error"}
+
 
 @app.get("/forecast", response_model=ForecastResponse)
 def get_forecast(
@@ -146,9 +167,12 @@ def get_forecast(
             forecast=forecast_points,
             metrics=MetricsModel(**{k: round(v, 4) for k, v in metrics.items()}),
         )
+    except HTTPException:
+        raise
     except Exception as e:
         print("FULL ERROR:", traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.get("/tickers")
 def suggested_tickers():
@@ -160,7 +184,6 @@ def suggested_tickers():
             {"ticker": "NVDA", "name": "Nvidia"},
             {"ticker": "AMZN", "name": "Amazon"},
             {"ticker": "GOOGL", "name": "Google"},
-            {"ticker": "BTC-USD", "name": "Bitcoin"},
             {"ticker": "SPY", "name": "S&P 500 ETF"},
         ]
     }
