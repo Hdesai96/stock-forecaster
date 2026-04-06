@@ -40,45 +40,30 @@ class ForecastResponse(BaseModel):
 def fetch_data(ticker: str) -> pd.DataFrame:
     import requests
     
-    # Use yfinance with a session that has proper headers
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    })
+    API_KEY = "KST29ACWRH1JHNK1"
     
-    try:
-        raw = yf.download(
-            ticker,
-            start="2015-01-01",
-            end=date.today().strftime("%Y-%m-%d"),
-            auto_adjust=True,
-            progress=False,
-            threads=False,
-            session=session
-        )
-    except Exception:
-        raw = yf.download(
-            ticker,
-            period="10y",
-            auto_adjust=True,
-            progress=False,
-            threads=False,
-            session=session
-        )
-
-    if raw.empty:
+    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY_ADJUSTED&symbol={ticker}&outputsize=full&apikey={API_KEY}"
+    
+    response = requests.get(url)
+    data = response.json()
+    
+    if "Time Series (Daily)" not in data:
         raise HTTPException(status_code=404, detail=f"No data found for ticker '{ticker}'")
-
-    if isinstance(raw.columns, pd.MultiIndex):
-        raw.columns = raw.columns.get_level_values(0)
-
-    df = raw[["Close", "Volume"]].copy()
-    df.columns = ["y", "volume"]
+    
+    ts = data["Time Series (Daily)"]
+    df = pd.DataFrame.from_dict(ts, orient="index")
+    df.index = pd.to_datetime(df.index)
+    df = df.sort_index()
+    df = df.rename(columns={"4. close": "y", "6. volume": "volume"})
+    df["y"] = df["y"].astype(float)
+    df["volume"] = df["volume"].astype(float)
     df.index.name = "ds"
     df = df.reset_index()
     df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
+    df = df[["ds", "y", "volume"]]
     df = df.dropna(subset=["y"])
-    df["y"] = df["y"].values.flatten().astype(float)
+    
+    print(f"Fetched {len(df)} rows for {ticker}")
     return df
 
 def train_and_forecast(df, forecast_days, interval_width):
