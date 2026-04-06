@@ -38,6 +38,14 @@ class ForecastResponse(BaseModel):
     forecast: list[ForecastPoint]
     metrics: MetricsModel
 def fetch_data(ticker: str) -> pd.DataFrame:
+    import requests
+    
+    # Use yfinance with a session that has proper headers
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    })
+    
     try:
         raw = yf.download(
             ticker,
@@ -45,7 +53,8 @@ def fetch_data(ticker: str) -> pd.DataFrame:
             end=date.today().strftime("%Y-%m-%d"),
             auto_adjust=True,
             progress=False,
-            threads=False
+            threads=False,
+            session=session
         )
     except Exception:
         raw = yf.download(
@@ -53,7 +62,8 @@ def fetch_data(ticker: str) -> pd.DataFrame:
             period="10y",
             auto_adjust=True,
             progress=False,
-            threads=False
+            threads=False,
+            session=session
         )
 
     if raw.empty:
