@@ -29,20 +29,20 @@ st.markdown("""
     #MainMenu, footer, header { visibility: hidden; }
 
     /* Main background */
-    .stApp { background-color: #0d0d14; }
+    .stApp { background-color: #13131f; }
 
     /* Sidebar */
     [data-testid="stSidebar"] {
-        background-color: #12121f;
-        border-right: 1px solid #1e1e30;
+        background-color: #1a1a2e;
+        border-right: 1px solid #2a2a45;
     }
     [data-testid="stSidebar"] * { font-family: 'Inter', sans-serif; }
 
     /* Ticker quick-pick buttons */
     div[data-testid="stHorizontalBlock"] button {
-        background-color: #1a1a2e !important;
-        border: 1px solid #2a2a45 !important;
-        color: #c8c8e0 !important;
+        background-color: #22223a !important;
+        border: 1px solid #35355a !important;
+        color: #d0d0f0 !important;
         border-radius: 6px !important;
         font-size: 12px !important;
         font-weight: 500 !important;
@@ -70,22 +70,22 @@ st.markdown("""
 
     /* Metric cards */
     [data-testid="stMetric"] {
-        background: #12121f;
-        border: 1px solid #1e1e30;
+        background: #1e1e35;
+        border: 1px solid #2e2e50;
         border-radius: 10px;
         padding: 18px 20px !important;
     }
-    [data-testid="stMetricLabel"] { color: #6b6b8a !important; font-size: 12px !important; font-weight: 500 !important; letter-spacing: 0.06em !important; text-transform: uppercase; }
-    [data-testid="stMetricValue"] { color: #f0f0ff !important; font-size: 26px !important; font-weight: 700 !important; }
+    [data-testid="stMetricLabel"] { color: #8888aa !important; font-size: 12px !important; font-weight: 500 !important; letter-spacing: 0.06em !important; text-transform: uppercase; }
+    [data-testid="stMetricValue"] { color: #ffffff !important; font-size: 26px !important; font-weight: 700 !important; }
     [data-testid="stMetricDelta"] { font-size: 13px !important; font-weight: 500 !important; }
 
     /* Divider */
-    hr { border-color: #1e1e30 !important; }
+    hr { border-color: #2a2a45 !important; }
 
     /* Text input */
     .stTextInput input {
-        background-color: #1a1a2e !important;
-        border: 1px solid #2a2a45 !important;
+        background-color: #22223a !important;
+        border: 1px solid #35355a !important;
         border-radius: 8px !important;
         color: #f0f0ff !important;
         font-family: 'Inter', sans-serif !important;
@@ -96,8 +96,8 @@ st.markdown("""
 
     /* Expander */
     [data-testid="stExpander"] {
-        background: #12121f;
-        border: 1px solid #1e1e30 !important;
+        background: #1e1e35;
+        border: 1px solid #2e2e50 !important;
         border-radius: 10px !important;
     }
 
@@ -106,7 +106,7 @@ st.markdown("""
 
     /* Section label */
     .section-label {
-        color: #6b6b8a;
+        color: #8888aa;
         font-size: 11px;
         font-weight: 600;
         letter-spacing: 0.1em;
@@ -124,15 +124,15 @@ st.markdown("""
     }
     .hero-sub {
         font-size: 14px;
-        color: #6b6b8a;
+        color: #8888aa;
         margin-top: 4px;
         letter-spacing: 0.02em;
     }
 
     /* Empty state card */
     .empty-card {
-        background: #12121f;
-        border: 1px solid #1e1e30;
+        background: #1e1e35;
+        border: 1px solid #2e2e50;
         border-radius: 12px;
         padding: 36px 40px;
         color: #9090b0;
@@ -140,11 +140,11 @@ st.markdown("""
         font-size: 15px;
     }
     .empty-card h3 { color: #c8c8e0; font-size: 18px; font-weight: 600; margin-bottom: 12px; }
-    .empty-card code { background: #1e1e30; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #a78bfa; }
+    .empty-card code { background: #2a2a45; padding: 2px 6px; border-radius: 4px; font-size: 13px; color: #a78bfa; }
     .empty-card .disclaimer {
         margin-top: 20px;
         padding: 12px 16px;
-        background: #1a1a2e;
+        background: #22223a;
         border-left: 3px solid #4f46e5;
         border-radius: 4px;
         font-size: 13px;
@@ -268,8 +268,8 @@ if run:
     )
 
     fig.update_layout(
-        paper_bgcolor="#0d0d14",
-        plot_bgcolor="#0d0d14",
+        paper_bgcolor="#13131f",
+        plot_bgcolor="#13131f",
         font=dict(family="Inter", color="#6b6b8a"),
         title=dict(
             text=f"<b>{ticker}</b>  ·  {forecast_days}-Day Forecast",
@@ -279,13 +279,13 @@ if run:
         ),
         xaxis=dict(
             showgrid=True,
-            gridcolor="#1a1a2e",
+            gridcolor="#22223a",
             zeroline=False,
             tickfont=dict(size=11),
         ),
         yaxis=dict(
             showgrid=True,
-            gridcolor="#1a1a2e",
+            gridcolor="#22223a",
             zeroline=False,
             tickprefix="$",
             tickfont=dict(size=11),
