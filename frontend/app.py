@@ -159,16 +159,30 @@ st.markdown('<div class="hero-sub">AI-powered price forecasting &nbsp;·&nbsp; M
 st.divider()
 
 # ── Sidebar ────────────────────────────────────────────────────────────────────
+if "ticker" not in st.session_state:
+    st.session_state["ticker"] = "AAPL"
+
 with st.sidebar:
     st.markdown('<div class="section-label">Ticker</div>', unsafe_allow_html=True)
-    ticker_input = st.text_input("", value="AAPL", max_chars=10, label_visibility="collapsed").upper().strip()
+
+    def _on_text_change():
+        st.session_state["ticker"] = st.session_state["_ticker_input"].upper().strip()
+
+    st.text_input(
+        "",
+        value=st.session_state["ticker"],
+        max_chars=10,
+        key="_ticker_input",
+        label_visibility="collapsed",
+        on_change=_on_text_change,
+    )
 
     st.markdown('<div class="section-label" style="margin-top:16px">Quick Select</div>', unsafe_allow_html=True)
     cols = st.columns(2)
     for i, (t, name) in enumerate(SUGGESTED):
         if cols[i % 2].button(t, key=f"btn_{t}", help=name, use_container_width=True):
-            ticker_input = t
             st.session_state["ticker"] = t
+            st.rerun()
 
     st.divider()
 
@@ -188,13 +202,10 @@ with st.sidebar:
     st.divider()
     run = st.button("Generate Forecast", type="primary", use_container_width=True)
 
-# sync ticker
-ticker = st.session_state.get("ticker", ticker_input) if "ticker" in st.session_state else ticker_input
+ticker = st.session_state["ticker"].upper().strip()
 
 # ── Forecast ───────────────────────────────────────────────────────────────────
 if run:
-    st.session_state["ticker"] = ticker_input
-    ticker = ticker_input
 
     with st.spinner(f"Training model for {ticker} — this takes about 2 minutes..."):
         try:
