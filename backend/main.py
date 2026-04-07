@@ -8,24 +8,40 @@ from prophet import Prophet
 from datetime import date, datetime
 import warnings
 import time
+import os
+import json
 warnings.filterwarnings("ignore")
 
-# ── Simple in-memory cache (TTL = 1 hour) ─────────────────────────────────────
-_cache: dict = {}
-CACHE_TTL = 3600  # seconds
+# ── Disk cache (survives Render restarts, TTL = 23 hours) ─────────────────────
+CACHE_DIR = "/tmp/stock_cache"
+CACHE_TTL = 23 * 3600  # refresh once per day
+os.makedirs(CACHE_DIR, exist_ok=True)
 
-def _cache_get(key: str):
-    if key in _cache:
-        data, ts = _cache[key]
-        if time.time() - ts < CACHE_TTL:
-            print(f"Cache hit for {key}")
-            return data
-        del _cache[key]
+def _cache_path(ticker: str) -> str:
+    return os.path.join(CACHE_DIR, f"{ticker}.json")
+
+def _cache_get(ticker: str):
+    path = _cache_path(ticker)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, "r") as f:
+            obj = json.load(f)
+        if time.time() - obj["ts"] < CACHE_TTL:
+            print(f"Disk cache hit for {ticker}")
+            return pd.DataFrame(obj["data"])
+    except Exception:
+        pass
     return None
 
-def _cache_set(key: str, data):
-    _cache[key] = (data, time.time())
-    print(f"Cached data for {key}")
+def _cache_set(ticker: str, df: pd.DataFrame):
+    path = _cache_path(ticker)
+    try:
+        with open(path, "w") as f:
+            json.dump({"ts": time.time(), "data": df.assign(ds=df["ds"].astype(str)).to_dict(orient="records")}, f)
+        print(f"Disk cached {ticker}")
+    except Exception as e:
+        print(f"Cache write failed: {e}")
 
 app = FastAPI(title="Stock Forecaster API")
 
@@ -62,6 +78,7 @@ class ForecastResponse(BaseModel):
 def fetch_data(ticker: str) -> pd.DataFrame:
     cached = _cache_get(ticker)
     if cached is not None:
+        cached["ds"] = pd.to_datetime(cached["ds"])
         return cached.copy()
 
     # Use last 5 years only — older data hurts more than it helps for near-term forecasting
