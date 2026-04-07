@@ -207,22 +207,37 @@ ticker = st.session_state["ticker"].upper().strip()
 # ── Forecast ───────────────────────────────────────────────────────────────────
 if run:
 
+    # Wake the backend first if it's sleeping (Render free tier spins down)
+    with st.spinner("Waking up the server..."):
+        try:
+            requests.get(f"{API_URL}/health", timeout=60)
+        except Exception:
+            pass
+
     with st.spinner(f"Training model for {ticker} — this takes about 2 minutes..."):
         try:
             resp = requests.get(
                 f"{API_URL}/forecast",
                 params={"ticker": ticker, "forecast_days": forecast_days, "interval_width": confidence},
-                timeout=300,
+                timeout=360,
             )
             if resp.status_code == 404:
                 st.error(f"Ticker **{ticker}** not found. Check the symbol and try again.")
                 st.stop()
             elif resp.status_code != 200:
-                st.error(f"API error {resp.status_code}: {resp.json().get('detail', 'Unknown error')}")
+                try:
+                    detail = resp.json().get("detail", "Unknown error")
+                except Exception:
+                    detail = resp.text[:200] or f"HTTP {resp.status_code}"
+                st.error(f"API error: {detail}")
                 st.stop()
-            data = resp.json()
+            try:
+                data = resp.json()
+            except Exception:
+                st.error("Server returned an empty response. The backend may still be waking up — wait 30 seconds and try again.")
+                st.stop()
         except requests.exceptions.Timeout:
-            st.error("Request timed out. The server may be waking up — try again in 30 seconds.")
+            st.error("Request timed out. Try again — the server should be warm now.")
             st.stop()
         except Exception as e:
             st.error(f"Connection error: {e}")
