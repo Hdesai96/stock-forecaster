@@ -1,6 +1,8 @@
 fastapi==0.111.0
 uvicorn==0.29.0
 prophet==1.1.5
+cmdstanpy==1.2.4
+pystan==3.9.1
 yfinance==0.2.40
 pandas==2.2.2
 numpy==1.26.4
