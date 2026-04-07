@@ -18,7 +18,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-API_KEY = "CX0LKRLDG6QO5UJ0"
+TIINGO_TOKEN = "9f2bf23fbabeda4660241d973bc01f8d6661b849"
 
 class ForecastPoint(BaseModel):
     date: str
@@ -42,32 +42,28 @@ class ForecastResponse(BaseModel):
 
 
 def fetch_data(ticker: str) -> pd.DataFrame:
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&outputsize=full&apikey={API_KEY}"
-    
-    print(f"Fetching data for {ticker} from Alpha Vantage...")
-    response = requests.get(url, timeout=30)
+    url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate=2000-01-01&token={TIINGO_TOKEN}"
+
+    print(f"Fetching data for {ticker} from Tiingo...")
+    response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=30)
+
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' not found on Tiingo.")
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Tiingo error {response.status_code}: {response.text[:200]}")
+
     data = response.json()
-    
-    print(f"Response keys: {list(data.keys())}")
-    
-    if "Time Series (Daily)" not in data:
-        error_msg = data.get("Note") or data.get("Information") or data.get("Error Message") or "Unknown error"
-        print(f"Error from Alpha Vantage: {error_msg}")
-        raise HTTPException(status_code=404, detail=f"No data found for ticker '{ticker}': {error_msg}")
-    
-    ts = data["Time Series (Daily)"]
-    df = pd.DataFrame.from_dict(ts, orient="index")
-    df.index = pd.to_datetime(df.index)
-    df = df.sort_index()
-    df = df.rename(columns={"4. close": "y", "5. volume": "volume"})
+
+    if not data:
+        raise HTTPException(status_code=404, detail=f"No data returned for ticker '{ticker}'.")
+
+    df = pd.DataFrame(data)
+    df["ds"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
+    df = df.rename(columns={"close": "y", "volume": "volume"})
     df["y"] = df["y"].astype(float)
-    df["volume"] = df["volume"].astype(float)
-    df.index.name = "ds"
-    df = df.reset_index()
-    df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
-    df = df[["ds", "y", "volume"]]
-    df = df.dropna(subset=["y"])
-    
+    df = df.sort_values("ds").reset_index(drop=True)
+    df = df[["ds", "y"]].dropna(subset=["y"])
+
     print(f"Fetched {len(df)} rows for {ticker}, last date: {df['ds'].max()}")
     return df
 
@@ -124,13 +120,13 @@ def health():
 
 @app.get("/test-data")
 def test_data(ticker: str = "AAPL"):
-    """Debug endpoint — tests Alpha Vantage directly"""
-    url = f"https://www.alphavantage.co/query?function=TIME_SERIES_DAILY&symbol={ticker}&outputsize=compact&apikey={API_KEY}"
-    response = requests.get(url, timeout=30)
+    """Debug endpoint — tests Tiingo directly"""
+    url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate=2024-01-01&token={TIINGO_TOKEN}"
+    response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=30)
+    if response.status_code != 200:
+        return {"status": "error", "code": response.status_code, "detail": response.text[:200]}
     data = response.json()
-    keys = list(data.keys())
-    first_key = list(data.get("Time Series (Daily)", {}).keys())[:2] if "Time Series (Daily)" in data else []
-    return {"response_keys": keys, "first_dates": first_key, "status": "ok" if "Time Series (Daily)" in data else "error"}
+    return {"status": "ok", "rows": len(data), "first": data[:1], "last": data[-1:] if data else []}
 
 
 @app.get("/forecast", response_model=ForecastResponse)
