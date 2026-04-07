@@ -5,9 +5,27 @@ import pandas as pd
 import numpy as np
 import requests
 from prophet import Prophet
-from datetime import date
+from datetime import date, datetime
 import warnings
+import time
 warnings.filterwarnings("ignore")
+
+# ── Simple in-memory cache (TTL = 1 hour) ─────────────────────────────────────
+_cache: dict = {}
+CACHE_TTL = 3600  # seconds
+
+def _cache_get(key: str):
+    if key in _cache:
+        data, ts = _cache[key]
+        if time.time() - ts < CACHE_TTL:
+            print(f"Cache hit for {key}")
+            return data
+        del _cache[key]
+    return None
+
+def _cache_set(key: str, data):
+    _cache[key] = (data, time.time())
+    print(f"Cached data for {key}")
 
 app = FastAPI(title="Stock Forecaster API")
 
@@ -42,6 +60,10 @@ class ForecastResponse(BaseModel):
 
 
 def fetch_data(ticker: str) -> pd.DataFrame:
+    cached = _cache_get(ticker)
+    if cached is not None:
+        return cached.copy()
+
     # Use last 5 years only — older data hurts more than it helps for near-term forecasting
     start_date = (date.today().replace(year=date.today().year - 5)).isoformat()
     url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate={start_date}&token={TIINGO_TOKEN}"
@@ -49,6 +71,8 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     print(f"Fetching data for {ticker} from Tiingo...")
     response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=30)
 
+    if response.status_code == 429:
+        raise HTTPException(status_code=429, detail="Too many requests to data provider. Please wait a minute and try again.")
     if response.status_code == 404:
         raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' not found on Tiingo.")
     if response.status_code != 200:
@@ -68,7 +92,8 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     df = df[["ds", "y"]].dropna(subset=["y"])
 
     print(f"Fetched {len(df)} rows for {ticker}, last date: {df['ds'].max()}")
-    return df
+    _cache_set(ticker, df)
+    return df.copy()
 
 
 def train_and_forecast(df, forecast_days, interval_width):

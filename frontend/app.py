@@ -224,6 +224,9 @@ if run:
             if resp.status_code == 404:
                 st.error(f"Ticker **{ticker}** not found. Check the symbol and try again.")
                 st.stop()
+            elif resp.status_code == 429:
+                st.warning("Too many requests — the data provider is rate limiting. Wait 1 minute and try again.")
+                st.stop()
             elif resp.status_code != 200:
                 try:
                     detail = resp.json().get("detail", "Unknown error")
