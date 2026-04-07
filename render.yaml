@@ -7,4 +7,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
-        
+
+  - type: web
+    name: stock-forecaster-frontend
+    runtime: docker
+    dockerfilePath: ./frontend/Dockerfile
+    plan: free
