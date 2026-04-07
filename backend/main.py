@@ -42,7 +42,9 @@ class ForecastResponse(BaseModel):
 
 
 def fetch_data(ticker: str) -> pd.DataFrame:
-    url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate=2000-01-01&token={TIINGO_TOKEN}"
+    # Use last 5 years only — older data hurts more than it helps for near-term forecasting
+    start_date = (date.today().replace(year=date.today().year - 5)).isoformat()
+    url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate={start_date}&token={TIINGO_TOKEN}"
 
     print(f"Fetching data for {ticker} from Tiingo...")
     response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=30)
@@ -59,7 +61,8 @@ def fetch_data(ticker: str) -> pd.DataFrame:
 
     df = pd.DataFrame(data)
     df["ds"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
-    df = df.rename(columns={"close": "y", "volume": "volume"})
+    # Use adjClose — accounts for splits and dividends, cleaner signal
+    df = df.rename(columns={"adjClose": "y"})
     df["y"] = df["y"].astype(float)
     df = df.sort_values("ds").reset_index(drop=True)
     df = df[["ds", "y"]].dropna(subset=["y"])
@@ -71,9 +74,11 @@ def fetch_data(ticker: str) -> pd.DataFrame:
 def train_and_forecast(df, forecast_days, interval_width):
     model = Prophet(
         seasonality_mode="multiplicative",
-        changepoint_prior_scale=0.3,
+        changepoint_prior_scale=0.05,
+        changepoint_range=0.9,
         yearly_seasonality=True,
         weekly_seasonality=True,
+        daily_seasonality=False,
         interval_width=interval_width,
     )
     model.fit(df[["ds", "y"]])
@@ -89,9 +94,11 @@ def evaluate_model(df, test_days, interval_width):
     test = df.iloc[split_idx:].copy()
     model = Prophet(
         seasonality_mode="multiplicative",
-        changepoint_prior_scale=0.3,
+        changepoint_prior_scale=0.05,
+        changepoint_range=0.9,
         yearly_seasonality=True,
         weekly_seasonality=True,
+        daily_seasonality=False,
         interval_width=interval_width,
     )
     model.fit(train_eval[["ds", "y"]])
