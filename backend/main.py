@@ -5,11 +5,12 @@ import pandas as pd
 import numpy as np
 import requests
 from prophet import Prophet
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import warnings
 import time
 import os
 import json
+import pandas_datareader.data as web
 warnings.filterwarnings("ignore")
 
 # ── Disk cache (survives Render restarts, TTL = 23 hours) ─────────────────────
@@ -75,40 +76,62 @@ class ForecastResponse(BaseModel):
     metrics: MetricsModel
 
 
+def _fetch_stooq(ticker: str) -> pd.DataFrame:
+    start = date.today() - timedelta(days=365 * 5)
+    # Stooq uses TICKER.US format for US stocks
+    raw = web.DataReader(f"{ticker}.US", "stooq", start=start)
+    if raw.empty:
+        raise ValueError("No data returned from Stooq")
+    raw = raw.sort_index()
+    df = raw[["Close"]].rename(columns={"Close": "y"}).copy()
+    df.index.name = "ds"
+    df = df.reset_index()
+    df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
+    df = df.dropna(subset=["y"])
+    return df
+
+
+def _fetch_tiingo(ticker: str) -> pd.DataFrame:
+    start_date = (date.today() - timedelta(days=365 * 5)).isoformat()
+    url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate={start_date}&token={TIINGO_TOKEN}"
+    response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=30)
+    if response.status_code == 429:
+        raise HTTPException(status_code=429, detail="Too many requests to data provider. Please wait a minute and try again.")
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' not found.")
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Tiingo error {response.status_code}: {response.text[:200]}")
+    data = response.json()
+    if not data:
+        raise HTTPException(status_code=404, detail=f"No data returned for ticker '{ticker}'.")
+    df = pd.DataFrame(data)
+    df["ds"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
+    df = df.rename(columns={"adjClose": "y"})
+    df["y"] = df["y"].astype(float)
+    df = df.sort_values("ds").reset_index(drop=True)
+    df = df[["ds", "y"]].dropna(subset=["y"])
+    return df
+
+
 def fetch_data(ticker: str) -> pd.DataFrame:
     cached = _cache_get(ticker)
     if cached is not None:
         cached["ds"] = pd.to_datetime(cached["ds"])
         return cached.copy()
 
-    # Use last 5 years only — older data hurts more than it helps for near-term forecasting
-    start_date = (date.today().replace(year=date.today().year - 5)).isoformat()
-    url = f"https://api.tiingo.com/tiingo/daily/{ticker}/prices?startDate={start_date}&token={TIINGO_TOKEN}"
+    # Try Stooq first (free, no rate limits), fall back to Tiingo
+    try:
+        print(f"Fetching {ticker} from Stooq...")
+        df = _fetch_stooq(ticker)
+        print(f"Stooq: {len(df)} rows for {ticker}")
+    except Exception as e:
+        print(f"Stooq failed ({e}), trying Tiingo...")
+        df = _fetch_tiingo(ticker)
+        print(f"Tiingo: {len(df)} rows for {ticker}")
 
-    print(f"Fetching data for {ticker} from Tiingo...")
-    response = requests.get(url, headers={"Content-Type": "application/json"}, timeout=30)
+    if len(df) < 365:
+        raise HTTPException(status_code=400, detail=f"Not enough data for {ticker}.")
 
-    if response.status_code == 429:
-        raise HTTPException(status_code=429, detail="Too many requests to data provider. Please wait a minute and try again.")
-    if response.status_code == 404:
-        raise HTTPException(status_code=404, detail=f"Ticker '{ticker}' not found on Tiingo.")
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Tiingo error {response.status_code}: {response.text[:200]}")
-
-    data = response.json()
-
-    if not data:
-        raise HTTPException(status_code=404, detail=f"No data returned for ticker '{ticker}'.")
-
-    df = pd.DataFrame(data)
-    df["ds"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
-    # Use adjClose — accounts for splits and dividends, cleaner signal
-    df = df.rename(columns={"adjClose": "y"})
-    df["y"] = df["y"].astype(float)
-    df = df.sort_values("ds").reset_index(drop=True)
-    df = df[["ds", "y"]].dropna(subset=["y"])
-
-    print(f"Fetched {len(df)} rows for {ticker}, last date: {df['ds'].max()}")
     _cache_set(ticker, df)
     return df.copy()
 
