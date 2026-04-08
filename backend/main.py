@@ -11,6 +11,7 @@ import time
 import os
 import json
 import pandas_datareader.data as web
+import yfinance as yf
 warnings.filterwarnings("ignore")
 
 # ── Disk cache (survives Render restarts, TTL = 23 hours) ─────────────────────
@@ -76,9 +77,22 @@ class ForecastResponse(BaseModel):
     metrics: MetricsModel
 
 
+def _fetch_yfinance(ticker: str) -> pd.DataFrame:
+    start = (date.today() - timedelta(days=365 * 5)).isoformat()
+    raw = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+    if raw.empty:
+        raise ValueError("No data from yfinance")
+    df = raw[["Close"]].rename(columns={"Close": "y"}).copy()
+    df.index.name = "ds"
+    df = df.reset_index()
+    df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
+    df["y"] = df["y"].astype(float)
+    df = df.dropna(subset=["y"])
+    return df
+
+
 def _fetch_stooq(ticker: str) -> pd.DataFrame:
     start = date.today() - timedelta(days=365 * 5)
-    # Stooq uses TICKER.US format for US stocks
     raw = web.DataReader(f"{ticker}.US", "stooq", start=start)
     if raw.empty:
         raise ValueError("No data returned from Stooq")
@@ -119,15 +133,21 @@ def fetch_data(ticker: str) -> pd.DataFrame:
         cached["ds"] = pd.to_datetime(cached["ds"])
         return cached.copy()
 
-    # Try Stooq first (free, no rate limits), fall back to Tiingo
-    try:
-        print(f"Fetching {ticker} from Stooq...")
-        df = _fetch_stooq(ticker)
-        print(f"Stooq: {len(df)} rows for {ticker}")
-    except Exception as e:
-        print(f"Stooq failed ({e}), trying Tiingo...")
-        df = _fetch_tiingo(ticker)
-        print(f"Tiingo: {len(df)} rows for {ticker}")
+    # Try yfinance first, then Stooq, then Tiingo as last resort
+    df = None
+    for source, fn in [("yfinance", _fetch_yfinance), ("Stooq", _fetch_stooq), ("Tiingo", _fetch_tiingo)]:
+        try:
+            print(f"Fetching {ticker} from {source}...")
+            df = fn(ticker)
+            print(f"{source}: {len(df)} rows for {ticker}")
+            break
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"{source} failed: {e}")
+
+    if df is None:
+        raise HTTPException(status_code=502, detail="All data sources failed. Try again in a moment.")
 
     if len(df) < 365:
         raise HTTPException(status_code=400, detail=f"Not enough data for {ticker}.")
@@ -178,6 +198,20 @@ def evaluate_model(df, test_days, interval_width):
     mape = float(np.mean(np.abs((actual - predicted) / actual)) * 100)
     coverage = float(((actual >= merged["yhat_lower"].values) & (actual <= merged["yhat_upper"].values)).mean())
     return {"mae": mae, "rmse": rmse, "mape": mape, "ci_coverage": coverage}
+
+
+@app.on_event("startup")
+async def prewarm_cache():
+    import threading
+    def _warm():
+        for ticker in ["AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "GOOGL", "SPY"]:
+            try:
+                if _cache_get(ticker) is None:
+                    print(f"Pre-warming cache for {ticker}...")
+                    fetch_data(ticker)
+            except Exception as e:
+                print(f"Pre-warm failed for {ticker}: {e}")
+    threading.Thread(target=_warm, daemon=True).start()
 
 
 @app.get("/")
