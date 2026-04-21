@@ -14,9 +14,12 @@ import pandas_datareader.data as web
 import yfinance as yf
 warnings.filterwarnings("ignore")
 
-# ── Disk cache (survives Render restarts, TTL = 23 hours) ─────────────────────
+# ── Disk cache (TTL = 23 hours) ───────────────────────────────────────────────
+# NOTE: /tmp is wiped on every Render restart on the free tier.
+# If you add a Persistent Disk in Render dashboard (mount at /data),
+# change CACHE_DIR to "/data/stock_cache" to survive restarts.
 CACHE_DIR = "/tmp/stock_cache"
-CACHE_TTL = 23 * 3600  # refresh once per day
+CACHE_TTL = 23 * 3600
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 def _cache_path(ticker: str) -> str:
@@ -77,9 +80,24 @@ class ForecastResponse(BaseModel):
     metrics: MetricsModel
 
 
+# ── FIX 1: Add browser-like User-Agent so Render's IP isn't blocked by Yahoo ──
 def _fetch_yfinance(ticker: str) -> pd.DataFrame:
+    session = requests.Session()
+    session.headers.update({
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        )
+    })
     start = (date.today() - timedelta(days=365 * 5)).isoformat()
-    raw = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+    raw = yf.download(
+        ticker,
+        start=start,
+        progress=False,
+        auto_adjust=True,
+        session=session,   # <-- passes the spoofed session to yfinance
+    )
     if raw.empty:
         raise ValueError("No data from yfinance")
     df = raw[["Close"]].rename(columns={"Close": "y"}).copy()
@@ -127,13 +145,39 @@ def _fetch_tiingo(ticker: str) -> pd.DataFrame:
     return df
 
 
+# ── FIX 3: Rate-limit guard — prevents same ticker being re-fetched within 60s ─
+def _rate_limit_check(ticker: str):
+    guard_file = os.path.join(CACHE_DIR, f"{ticker}.lock")
+    if os.path.exists(guard_file):
+        try:
+            elapsed = time.time() - float(open(guard_file).read())
+            if elapsed < 60:
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"Request for {ticker} too soon — please wait {int(60 - elapsed)}s."
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+    # Write new timestamp
+    try:
+        open(guard_file, "w").write(str(time.time()))
+    except Exception:
+        pass
+
+
 def fetch_data(ticker: str) -> pd.DataFrame:
     cached = _cache_get(ticker)
     if cached is not None:
         cached["ds"] = pd.to_datetime(cached["ds"])
         return cached.copy()
 
-    # Try yfinance first, then Stooq, then Tiingo as last resort
+    # Guard against burst requests for the same ticker
+    _rate_limit_check(ticker)
+
+    # Try yfinance first (Fix 1 makes this work on cloud IPs),
+    # then Stooq, then Tiingo only as last resort
     df = None
     for source, fn in [("yfinance", _fetch_yfinance), ("Stooq", _fetch_stooq), ("Tiingo", _fetch_tiingo)]:
         try:
@@ -200,15 +244,18 @@ def evaluate_model(df, test_days, interval_width):
     return {"mae": mae, "rmse": rmse, "mape": mape, "ci_coverage": coverage}
 
 
+# ── FIX 2: Pre-warm with delay so startup doesn't burst Tiingo with 7 calls ───
 @app.on_event("startup")
 async def prewarm_cache():
     import threading
     def _warm():
-        for ticker in ["AAPL", "MSFT", "TSLA", "NVDA", "AMZN", "GOOGL", "SPY"]:
+        # Only pre-warm the 5 sidebar tickers; AAPL/MSFT added as bonus if quota allows
+        for ticker in ["TSLA", "NVDA", "AMZN", "GOOGL", "SPY", "AAPL", "MSFT"]:
             try:
                 if _cache_get(ticker) is None:
                     print(f"Pre-warming cache for {ticker}...")
                     fetch_data(ticker)
+                    time.sleep(4)   # 4s gap = max ~15 Tiingo calls/min, well under 50/hr limit
             except Exception as e:
                 print(f"Pre-warm failed for {ticker}: {e}")
     threading.Thread(target=_warm, daemon=True).start()
