@@ -9,3 +9,5 @@ pydantic==2.7.1
 requests==2.31.0
 pandas-datareader==0.10.0
 yfinance==0.2.40
+scipy
+plotly
