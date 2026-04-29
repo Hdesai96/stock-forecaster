@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# System packages needed to compile Prophet (cmdstan/Stan backend)
+# System packages needed to compile Prophet
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
@@ -9,13 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY frontend/requirements.txt .
+COPY requirements.txt .
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
-COPY frontend/ .
+COPY . .
 
-# Create cache directory
 RUN mkdir -p /tmp/stock_cache
 
 CMD streamlit run app.py --server.port ${PORT:-8501} --server.address 0.0.0.0 --server.headless true
