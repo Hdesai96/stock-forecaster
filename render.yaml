@@ -3,5 +3,4 @@ services:
     name: stock-forecaster
     runtime: docker
     dockerfilePath: ./frontend/Dockerfile
-    dockerContext: ./frontend
     plan: free

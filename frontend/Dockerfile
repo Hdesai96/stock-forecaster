@@ -9,12 +9,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY requirements.txt .
+COPY frontend/requirements.txt requirements.txt
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
-    python -c "import cmdstanpy; cmdstanpy.install_cmdstan()"
+    python -c "import cmdstanpy; cmdstanpy.install_cmdstan(version='2.34.1', cores=2, progress=False, overwrite=False)"
 
-COPY . .
+COPY frontend/ .
 
 RUN mkdir -p /tmp/stock_cache
 
