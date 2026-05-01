@@ -21,7 +21,6 @@ import plotly.graph_objects as go
 from prophet import Prophet
 from scipy.stats import norm
 
-import pandas_datareader.data as web
 import yfinance as yf
 
 warnings.filterwarnings("ignore")
@@ -64,20 +63,6 @@ def _cache_set(ticker: str, df: pd.DataFrame):
 
 
 # ── Data sources ──────────────────────────────────────────────────────────────
-def _fetch_stooq(ticker: str) -> pd.DataFrame:
-    start = date.today() - timedelta(days=365 * 5)
-    raw = web.DataReader(f"{ticker}.US", "stooq", start=start)
-    if raw.empty:
-        raise ValueError("No data from Stooq")
-    raw = raw.sort_index()
-    df = raw[["Close"]].rename(columns={"Close": "y"}).copy()
-    df.index.name = "ds"
-    df = df.reset_index()
-    df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
-    df["y"] = df["y"].astype(float)
-    return df.dropna(subset=["y"])
-
-
 def _fetch_yfinance(ticker: str) -> pd.DataFrame:
     start = (date.today() - timedelta(days=365 * 5)).isoformat()
     raw = yf.download(ticker, start=start, progress=False, auto_adjust=True)
@@ -124,7 +109,6 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     df = None
     last_err = None
     for source, fn in [
-        ("Stooq", _fetch_stooq),
         ("yfinance", _fetch_yfinance),
         ("Tiingo", _fetch_tiingo),
     ]:

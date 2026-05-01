@@ -5,6 +5,5 @@ requests>=2.31.0
 prophet==1.1.5
 cmdstanpy==1.2.4
 yfinance>=0.2.40
-pandas-datareader>=0.10.0
 plotly>=5.20.0
 scipy>=1.13.0
