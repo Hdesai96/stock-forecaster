@@ -67,15 +67,19 @@ def _cache_set(key: str, df: pd.DataFrame):
 
 # ── Data fetching ─────────────────────────────────────────────────────────────
 def _fetch_stooq(ticker: str) -> pd.DataFrame:
-    """Direct Stooq CSV — no API key, works on cloud IPs."""
+    """Direct Stooq CSV — no API key. Filters non-CSV lines to handle rate-limit messages."""
     from io import StringIO
     url = f"https://stooq.com/q/d/l/?s={ticker.lower()}.us&i=d"
     r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
     if r.status_code != 200:
         raise ValueError(f"Stooq HTTP {r.status_code}")
-    df = pd.read_csv(StringIO(r.text))
-    if df.empty or "Close" not in df.columns:
-        raise ValueError("No usable data from Stooq")
+    # Keep only lines that look like CSV rows (≥4 commas = OHLCV + date)
+    lines = [ln for ln in r.text.splitlines() if ln.count(",") >= 4]
+    if not lines:
+        raise ValueError("Stooq returned no CSV rows (possible rate-limit or unknown ticker)")
+    df = pd.read_csv(StringIO("\n".join(lines)))
+    if "Close" not in df.columns:
+        raise ValueError(f"Stooq: unexpected columns {df.columns.tolist()}")
     df = df.rename(columns={"Date": "ds", "Close": "y"})
     df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
     df["y"] = pd.to_numeric(df["y"], errors="coerce")
@@ -85,8 +89,29 @@ def _fetch_stooq(ticker: str) -> pd.DataFrame:
 
 
 def _fetch_yfinance(ticker: str) -> pd.DataFrame:
-    start = (date.today() - timedelta(days=365 * 5)).isoformat()
-    raw = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+    """Try Ticker.history() first (different endpoint), fall back to yf.download()."""
+    cutoff = (date.today() - timedelta(days=365 * 5)).isoformat()
+
+    # Attempt 1: Ticker.history() — uses a different Yahoo endpoint
+    try:
+        t = yf.Ticker(ticker)
+        raw = t.history(period="5y", auto_adjust=True, actions=False)
+        if raw is not None and not raw.empty:
+            if isinstance(raw.columns, pd.MultiIndex):
+                raw.columns = raw.columns.get_level_values(0)
+            df = raw[["Close"]].rename(columns={"Close": "y"}).copy()
+            df.index.name = "ds"
+            df = df.reset_index()
+            df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
+            df["y"] = df["y"].astype(float)
+            result = df.dropna(subset=["y"])
+            if len(result) >= 365:
+                return result
+    except Exception:
+        pass
+
+    # Attempt 2: yf.download()
+    raw = yf.download(ticker, start=cutoff, progress=False, auto_adjust=True)
     if raw is None or raw.empty:
         raise ValueError("No data from yfinance")
     if isinstance(raw.columns, pd.MultiIndex):
@@ -148,7 +173,10 @@ def fetch_data(ticker: str) -> pd.DataFrame:
         stale["ds"] = pd.to_datetime(stale["ds"])
         return stale.copy()
 
-    raise RuntimeError(f"All data sources failed for {ticker}. Last error: {last_err}")
+    raise RuntimeError(
+        f"All data sources failed for {ticker}. Last error: {last_err}. "
+        "Tip: set a TIINGO_TOKEN environment variable in Render for a reliable fallback."
+    )
 
 
 # ── Technical indicators ───────────────────────────────────────────────────────
