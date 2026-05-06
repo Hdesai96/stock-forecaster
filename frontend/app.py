@@ -66,6 +66,24 @@ def _cache_set(key: str, df: pd.DataFrame):
 
 
 # ── Data fetching ─────────────────────────────────────────────────────────────
+def _fetch_stooq(ticker: str) -> pd.DataFrame:
+    """Direct Stooq CSV — no API key, works on cloud IPs."""
+    from io import StringIO
+    url = f"https://stooq.com/q/d/l/?s={ticker.lower()}.us&i=d"
+    r = requests.get(url, timeout=30, headers={"User-Agent": "Mozilla/5.0"})
+    if r.status_code != 200:
+        raise ValueError(f"Stooq HTTP {r.status_code}")
+    df = pd.read_csv(StringIO(r.text))
+    if df.empty or "Close" not in df.columns:
+        raise ValueError("No usable data from Stooq")
+    df = df.rename(columns={"Date": "ds", "Close": "y"})
+    df["ds"] = pd.to_datetime(df["ds"]).dt.tz_localize(None)
+    df["y"] = pd.to_numeric(df["y"], errors="coerce")
+    df = df[["ds", "y"]].dropna().sort_values("ds").reset_index(drop=True)
+    cutoff = pd.Timestamp(date.today() - timedelta(days=365 * 5))
+    return df[df["ds"] >= cutoff].reset_index(drop=True)
+
+
 def _fetch_yfinance(ticker: str) -> pd.DataFrame:
     start = (date.today() - timedelta(days=365 * 5)).isoformat()
     raw = yf.download(ticker, start=start, progress=False, auto_adjust=True)
@@ -111,7 +129,7 @@ def fetch_data(ticker: str) -> pd.DataFrame:
 
     df = None
     last_err = None
-    for _source, fn in [("yfinance", _fetch_yfinance), ("Tiingo", _fetch_tiingo)]:
+    for _source, fn in [("Stooq", _fetch_stooq), ("yfinance", _fetch_yfinance), ("Tiingo", _fetch_tiingo)]:
         try:
             df = fn(ticker)
             if df is not None and len(df) >= 365:
