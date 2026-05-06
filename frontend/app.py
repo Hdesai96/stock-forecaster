@@ -275,8 +275,10 @@ def prophet_on_returns(
     use_spy = spy_df is not None and len(spy_df) > 10
     if use_spy:
         # Yesterday's SPY log-return → today's stock return (1-day lag)
-        spy_log_ret = np.log(spy_df.set_index("ds")["y"]).diff().shift(1)
+        spy_clean = spy_df.drop_duplicates(subset=["ds"]).set_index("ds")["y"]
+        spy_log_ret = np.log(spy_clean).diff().shift(1)
         spy_log_ret.name = "spy_lag1"
+        df_ret = df_ret.drop_duplicates(subset=["ds"])
         df_ret = df_ret.join(spy_log_ret, on="ds", how="left")
         df_ret["spy_lag1"] = df_ret["spy_lag1"].fillna(0.0)
         model.add_regressor("spy_lag1", standardize=True)
