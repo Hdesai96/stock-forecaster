@@ -150,6 +150,7 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     cached = _cache_get(ticker)
     if cached is not None:
         cached["ds"] = pd.to_datetime(cached["ds"])
+        cached = cached.drop_duplicates(subset=["ds"]).reset_index(drop=True)
         return cached.copy()
 
     df = None
@@ -172,6 +173,7 @@ def fetch_data(ticker: str) -> pd.DataFrame:
     stale = _cache_get(ticker, allow_stale=True)
     if stale is not None and len(stale) >= 365:
         stale["ds"] = pd.to_datetime(stale["ds"])
+        stale = stale.drop_duplicates(subset=["ds"]).reset_index(drop=True)
         return stale.copy()
 
     raise RuntimeError(
