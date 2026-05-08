@@ -165,6 +165,7 @@ def fetch_data(ticker: str) -> pd.DataFrame:
             continue
 
     if df is not None and len(df) >= 365:
+        df = df.drop_duplicates(subset=["ds"]).reset_index(drop=True)
         _cache_set(ticker, df)
         return df.copy()
 
@@ -181,7 +182,7 @@ def fetch_data(ticker: str) -> pd.DataFrame:
 
 # ── Technical indicators ───────────────────────────────────────────────────────
 def compute_technicals(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.copy().sort_values("ds").reset_index(drop=True)
+    df = df.copy().sort_values("ds").drop_duplicates(subset=["ds"]).reset_index(drop=True)
 
     # RSI-14
     delta = df["y"].diff()
@@ -275,7 +276,7 @@ def fetch_earnings_dates(ticker: str):
 # ── Direction probability ──────────────────────────────────────────────────────
 def direction_probability(df: pd.DataFrame) -> dict:
     """Momentum + RSI heuristic → P(price higher in 5 trading days)."""
-    df = df.copy().sort_values("ds").reset_index(drop=True)
+    df = df.copy().sort_values("ds").drop_duplicates(subset=["ds"]).reset_index(drop=True)
     log_ret = np.log(df["y"]).diff().dropna()
     ret_5d  = float(log_ret.tail(5).sum())
     ret_20d = float(log_ret.tail(20).sum())
@@ -304,7 +305,7 @@ def prophet_on_returns(
     interval_width: float,
     spy_df: pd.DataFrame = None,
 ):
-    df = df.copy().sort_values("ds").reset_index(drop=True)
+    df = df.copy().sort_values("ds").drop_duplicates(subset=["ds"]).reset_index(drop=True)
     df["log_y"] = np.log(df["y"])
     df["ret"] = df["log_y"].diff()
     df_ret = df.dropna(subset=["ret"])[["ds", "ret"]].rename(columns={"ret": "y"})
@@ -348,7 +349,7 @@ def prophet_on_returns(
 
 
 def naive_forecast(df: pd.DataFrame, forecast_days: int, interval_width: float):
-    df = df.copy().sort_values("ds").reset_index(drop=True)
+    df = df.copy().sort_values("ds").drop_duplicates(subset=["ds"]).reset_index(drop=True)
     last_price = float(df["y"].iloc[-1])
     last_date  = df["ds"].max()
     sigma = float(np.log(df["y"]).diff().dropna().std())
