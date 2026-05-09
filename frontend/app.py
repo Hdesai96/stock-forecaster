@@ -326,10 +326,9 @@ def prophet_on_returns(
         # Yesterday's SPY log-return → today's stock return (1-day lag)
         spy_clean = spy_df.drop_duplicates(subset=["ds"]).set_index("ds")["y"]
         spy_log_ret = np.log(spy_clean).diff().shift(1)
-        spy_log_ret.name = "spy_lag1"
+        spy_map = spy_log_ret.to_dict()
         df_ret = df_ret.drop_duplicates(subset=["ds"]).reset_index(drop=True)
-        df_ret = df_ret.join(spy_log_ret, on="ds", how="left")
-        df_ret["spy_lag1"] = df_ret["spy_lag1"].fillna(0.0)
+        df_ret["spy_lag1"] = df_ret["ds"].map(spy_map).fillna(0.0)
         model.add_regressor("spy_lag1", standardize=True)
 
     model.fit(df_ret)
