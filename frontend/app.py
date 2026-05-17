@@ -305,12 +305,11 @@ def prophet_on_returns(
     df: pd.DataFrame,
     forecast_days: int,
     interval_width: float,
-    spy_df: pd.DataFrame = None,
 ):
     df = df.copy().sort_values("ds").drop_duplicates(subset=["ds"]).reset_index(drop=True)
     df["log_y"] = np.log(df["y"])
     df["ret"] = df["log_y"].diff()
-    df_ret = df.dropna(subset=["ret"])[["ds", "ret"]].rename(columns={"ret": "y"})
+    df_ret = df.dropna(subset=["ret"])[["ds", "ret"]].rename(columns={"ret": "y"}).reset_index(drop=True)
 
     model = Prophet(
         seasonality_mode="additive",
@@ -321,24 +320,8 @@ def prophet_on_returns(
         interval_width=interval_width,
     )
 
-    use_spy = spy_df is not None and len(spy_df) > 10
-    if use_spy:
-        # Yesterday's SPY log-return → today's stock return (1-day lag)
-        spy_clean = spy_df.drop_duplicates(subset=["ds"]).set_index("ds")["y"]
-        spy_log_ret = np.log(spy_clean).diff().shift(1)
-        spy_map = spy_log_ret.to_dict()
-        df_ret = df_ret.drop_duplicates(subset=["ds"]).reset_index(drop=True)
-        df_ret["spy_lag1"] = df_ret["ds"].map(spy_map).fillna(0.0)
-        model.add_regressor("spy_lag1", standardize=True)
-
     model.fit(df_ret)
-
     future = model.make_future_dataframe(periods=forecast_days, freq="B")
-
-    if use_spy:
-        spy_map = df_ret.set_index("ds")["spy_lag1"].to_dict()
-        future["spy_lag1"] = future["ds"].map(spy_map).fillna(0.0)
-
     fc = model.predict(future)
     fc = fc[fc["ds"] > df["ds"].max()].copy().reset_index(drop=True)
 
@@ -379,13 +362,13 @@ def _metrics(actual, predicted, lower, upper):
     }
 
 
-def evaluate_models(df, test_days, interval_width, spy_df=None):
+def evaluate_models(df, test_days, interval_width):
     test_days = min(test_days, max(30, len(df) // 5))
     train = df.iloc[: len(df) - test_days].copy().reset_index(drop=True)
     test  = df.iloc[len(df) - test_days :].copy().reset_index(drop=True)
 
     try:
-        fc = prophet_on_returns(train, len(test), interval_width, spy_df=spy_df)
+        fc = prophet_on_returns(train, len(test), interval_width)
         n = min(len(fc), len(test))
         prophet_m = _metrics(
             test["y"].values[:n], fc["yhat"].values[:n],
@@ -408,18 +391,10 @@ def run_full_forecast(ticker: str, forecast_days: int, interval_width: float):
     df = fetch_data(ticker)
     if len(df) < 365:
         raise ValueError(f"Not enough data for {ticker}.")
-
-    spy_df = None
-    if ticker != "SPY":
-        try:
-            spy_df = fetch_data("SPY")
-        except Exception:
-            pass
-
     df_tech    = compute_technicals(df)
-    prophet_fc = prophet_on_returns(df, forecast_days, interval_width, spy_df=spy_df)
+    prophet_fc = prophet_on_returns(df, forecast_days, interval_width)
     naive_fc   = naive_forecast(df, forecast_days, interval_width)
-    prophet_m, naive_m = evaluate_models(df, 60, interval_width, spy_df=spy_df)
+    prophet_m, naive_m = evaluate_models(df, 60, interval_width)
     return df_tech, prophet_fc, naive_fc, prophet_m, naive_m
 
 
@@ -457,7 +432,7 @@ st.sidebar.caption(
 
 st.title("Stock Price Forecaster")
 st.markdown(
-    "**Prophet** with SPY market regressor · implied volatility · "
+    "**Prophet** · implied volatility · "
     "earnings markers · technical indicators · regime detection"
 )
 
